@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "j-quants-doc-mcp": {
+      "command": "uvx",
+      "args": ["j-quants-doc-mcp"]
+    }
+  }
+}
