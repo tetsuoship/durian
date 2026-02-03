@@ -6,7 +6,6 @@ COPY server/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY server/ ./server/
-COPY .env* ./
 
 ENV HOST=0.0.0.0
 ENV PORT=8000
