@@ -7,6 +7,10 @@
     "jquants-free-mcp-server": {
       "command": "python3",
       "args": ["scripts/jquants-mcp-wrapper.py"]
+    },
+    "jquants-remote": {
+      "type": "url",
+      "url": "http://localhost:8000/mcp"
     }
   }
 }
