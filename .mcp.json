@@ -3,6 +3,10 @@
     "j-quants-doc-mcp": {
       "command": "uvx",
       "args": ["j-quants-doc-mcp"]
+    },
+    "jquants-free-mcp-server": {
+      "command": "python3",
+      "args": ["scripts/jquants-mcp-wrapper.py"]
     }
   }
 }
