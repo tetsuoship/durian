@@ -8,4 +8,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY server/ ./server/
 
 ENV PORT=8000
-CMD uvicorn server.remote_mcp:app --host 0.0.0.0 --port $PORT
+CMD ["python", "server/remote_mcp.py"]
