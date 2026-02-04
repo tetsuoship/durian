@@ -90,7 +90,7 @@ async def get_daily_quotes(
         limit: Maximum number of results. Defaults to 10.
         start_position: Starting position for pagination. Defaults to 0.
     """
-    url = f"{JQUANTS_BASE}/equities/bars/daily?code={code}&from_yyyymmdd={from_date}&to_yyyymmdd={to_date}"
+    url = f"{JQUANTS_BASE}/equities/bars/daily?code={code}&from={from_date}&to={to_date}"
     response = await _make_request(url)
     if "error" in response:
         return json.dumps(response, ensure_ascii=False)
