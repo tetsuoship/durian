@@ -88,99 +88,114 @@ def load_equities_master(client: bigquery.Client):
 
 
 def load_daily_bars(client: bigquery.Client, from_date: str, to_date: str):
-    """Fetch and load daily bars for a date range."""
+    """Fetch and load daily bars for a date range (by date)."""
     print(f"Fetching daily bars ({from_date} to {to_date})...")
-    url = f"{JQUANTS_BASE}/equities/bars/daily?from={from_date}&to={to_date}"
-    data = fetch_all_pages(url)
-    if not data:
-        print("  No data returned.")
-        return
 
     table_id = f"{PROJECT_ID}.{DATASET}.daily_bars"
-
-    # Filter to schema fields only
     fields = ["Date", "Code", "O", "H", "L", "C", "Vo", "Va",
               "AdjFactor", "AdjO", "AdjH", "AdjL", "AdjC", "AdjVo"]
-    filtered = [{k: row.get(k) for k in fields} for row in data]
+    schema = [
+        bigquery.SchemaField("Date", "DATE"),
+        bigquery.SchemaField("Code", "STRING"),
+        bigquery.SchemaField("O", "FLOAT"),
+        bigquery.SchemaField("H", "FLOAT"),
+        bigquery.SchemaField("L", "FLOAT"),
+        bigquery.SchemaField("C", "FLOAT"),
+        bigquery.SchemaField("Vo", "FLOAT"),
+        bigquery.SchemaField("Va", "FLOAT"),
+        bigquery.SchemaField("AdjFactor", "FLOAT"),
+        bigquery.SchemaField("AdjO", "FLOAT"),
+        bigquery.SchemaField("AdjH", "FLOAT"),
+        bigquery.SchemaField("AdjL", "FLOAT"),
+        bigquery.SchemaField("AdjC", "FLOAT"),
+        bigquery.SchemaField("AdjVo", "FLOAT"),
+    ]
 
-    job_config = bigquery.LoadJobConfig(
-        write_disposition=bigquery.WriteDisposition.WRITE_APPEND,
-        source_format=bigquery.SourceFormat.NEWLINE_DELIMITED_JSON,
-        schema=[
-            bigquery.SchemaField("Date", "DATE"),
-            bigquery.SchemaField("Code", "STRING"),
-            bigquery.SchemaField("O", "FLOAT"),
-            bigquery.SchemaField("H", "FLOAT"),
-            bigquery.SchemaField("L", "FLOAT"),
-            bigquery.SchemaField("C", "FLOAT"),
-            bigquery.SchemaField("Vo", "FLOAT"),
-            bigquery.SchemaField("Va", "FLOAT"),
-            bigquery.SchemaField("AdjFactor", "FLOAT"),
-            bigquery.SchemaField("AdjO", "FLOAT"),
-            bigquery.SchemaField("AdjH", "FLOAT"),
-            bigquery.SchemaField("AdjL", "FLOAT"),
-            bigquery.SchemaField("AdjC", "FLOAT"),
-            bigquery.SchemaField("AdjVo", "FLOAT"),
-        ],
-    )
+    start = datetime.strptime(from_date, "%Y%m%d")
+    end = datetime.strptime(to_date, "%Y%m%d")
+    total_rows = 0
 
-    job = client.load_table_from_json(filtered, table_id, job_config=job_config)
-    job.result()
-    print(f"  Loaded {len(filtered)} rows into {table_id}")
+    current = start
+    while current <= end:
+        date_str = current.strftime("%Y%m%d")
+        # Skip weekends
+        if current.weekday() < 5:
+            data = fetch_all_pages(f"{JQUANTS_BASE}/equities/bars/daily?date={date_str}")
+            if data:
+                filtered = [{k: row.get(k) for k in fields} for row in data]
+                job_config = bigquery.LoadJobConfig(
+                    write_disposition=bigquery.WriteDisposition.WRITE_APPEND,
+                    source_format=bigquery.SourceFormat.NEWLINE_DELIMITED_JSON,
+                    schema=schema,
+                )
+                job = client.load_table_from_json(filtered, table_id, job_config=job_config)
+                job.result()
+                total_rows += len(filtered)
+                print(f"  {date_str}: {len(filtered)} rows")
+        current += timedelta(days=1)
+
+    print(f"  Total: {total_rows} rows loaded into {table_id}")
 
 
-def load_financial_summary(client: bigquery.Client):
-    """Fetch and load financial summary data."""
-    print("Fetching financial summary...")
-    url = f"{JQUANTS_BASE}/fins/summary"
-    data = fetch_all_pages(url)
-    if not data:
-        print("  No data returned.")
-        return
+def load_financial_summary(client: bigquery.Client, from_date: str, to_date: str):
+    """Fetch and load financial summary data by date."""
+    print(f"Fetching financial summary ({from_date} to {to_date})...")
 
     table_id = f"{PROJECT_ID}.{DATASET}.financial_summary"
+    numeric_fields = {"NetSales", "OperatingProfit", "OrdinaryProfit", "Profit",
+                      "EarningsPerShare", "TotalAssets", "Equity"}
+    shares_key = "NumberOfIssuedAndOutstandingSharesAtTheEndOfFiscalYearIncludingTreasuryStock"
+    schema = [
+        bigquery.SchemaField("DisclosedDate", "DATE"),
+        bigquery.SchemaField("Code", "STRING"),
+        bigquery.SchemaField("FiscalYear", "STRING"),
+        bigquery.SchemaField("FiscalQuarter", "STRING"),
+        bigquery.SchemaField("NetSales", "FLOAT"),
+        bigquery.SchemaField("OperatingProfit", "FLOAT"),
+        bigquery.SchemaField("OrdinaryProfit", "FLOAT"),
+        bigquery.SchemaField("Profit", "FLOAT"),
+        bigquery.SchemaField("EarningsPerShare", "FLOAT"),
+        bigquery.SchemaField("TotalAssets", "FLOAT"),
+        bigquery.SchemaField("Equity", "FLOAT"),
+        bigquery.SchemaField("NumberOfShares", "FLOAT"),
+    ]
 
-    fields = ["DisclosedDate", "Code", "FiscalYear", "FiscalQuarter",
-              "NetSales", "OperatingProfit", "OrdinaryProfit", "Profit",
-              "EarningsPerShare", "TotalAssets", "Equity",
-              "NumberOfIssuedAndOutstandingSharesAtTheEndOfFiscalYearIncludingTreasuryStock"]
+    start = datetime.strptime(from_date, "%Y%m%d")
+    end = datetime.strptime(to_date, "%Y%m%d")
+    total_rows = 0
 
-    filtered = []
-    for row in data:
-        r = {}
-        for k in fields:
-            v = row.get(k, "")
-            if k == "NumberOfIssuedAndOutstandingSharesAtTheEndOfFiscalYearIncludingTreasuryStock":
-                r["NumberOfShares"] = float(v) if v != "" else None
-            elif k in ("NetSales", "OperatingProfit", "OrdinaryProfit", "Profit",
-                       "EarningsPerShare", "TotalAssets", "Equity"):
-                r[k] = float(v) if v != "" else None
-            else:
-                r[k] = v if v != "" else None
-        filtered.append(r)
+    current = start
+    while current <= end:
+        date_str = current.strftime("%Y%m%d")
+        if current.weekday() < 5:
+            data = fetch_all_pages(f"{JQUANTS_BASE}/fins/summary?date={date_str}")
+            if data:
+                filtered = []
+                for row in data:
+                    r = {}
+                    r["DisclosedDate"] = row.get("DisclosedDate") or None
+                    r["Code"] = row.get("Code") or None
+                    r["FiscalYear"] = row.get("FiscalYear") or None
+                    r["FiscalQuarter"] = row.get("FiscalQuarter") or None
+                    for k in numeric_fields:
+                        v = row.get(k, "")
+                        r[k] = float(v) if v != "" else None
+                    v = row.get(shares_key, "")
+                    r["NumberOfShares"] = float(v) if v != "" else None
+                    filtered.append(r)
 
-    job_config = bigquery.LoadJobConfig(
-        write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE,
-        source_format=bigquery.SourceFormat.NEWLINE_DELIMITED_JSON,
-        schema=[
-            bigquery.SchemaField("DisclosedDate", "DATE"),
-            bigquery.SchemaField("Code", "STRING"),
-            bigquery.SchemaField("FiscalYear", "STRING"),
-            bigquery.SchemaField("FiscalQuarter", "STRING"),
-            bigquery.SchemaField("NetSales", "FLOAT"),
-            bigquery.SchemaField("OperatingProfit", "FLOAT"),
-            bigquery.SchemaField("OrdinaryProfit", "FLOAT"),
-            bigquery.SchemaField("Profit", "FLOAT"),
-            bigquery.SchemaField("EarningsPerShare", "FLOAT"),
-            bigquery.SchemaField("TotalAssets", "FLOAT"),
-            bigquery.SchemaField("Equity", "FLOAT"),
-            bigquery.SchemaField("NumberOfShares", "FLOAT"),
-        ],
-    )
+                job_config = bigquery.LoadJobConfig(
+                    write_disposition=bigquery.WriteDisposition.WRITE_APPEND,
+                    source_format=bigquery.SourceFormat.NEWLINE_DELIMITED_JSON,
+                    schema=schema,
+                )
+                job = client.load_table_from_json(filtered, table_id, job_config=job_config)
+                job.result()
+                total_rows += len(filtered)
+                print(f"  {date_str}: {len(filtered)} rows")
+        current += timedelta(days=1)
 
-    job = client.load_table_from_json(filtered, table_id, job_config=job_config)
-    job.result()
-    print(f"  Loaded {len(filtered)} rows into {table_id}")
+    print(f"  Total: {total_rows} rows loaded into {table_id}")
 
 
 def main():
@@ -198,8 +213,8 @@ def main():
     from_date = (datetime.now() - timedelta(days=30)).strftime("%Y%m%d")
     load_daily_bars(client, from_date, to_date)
 
-    # Load financial summary
-    load_financial_summary(client)
+    # Load financial summary (same date range)
+    load_financial_summary(client, from_date, to_date)
 
     print("\nDone!")
 
