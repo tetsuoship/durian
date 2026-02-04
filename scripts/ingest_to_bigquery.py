@@ -2,7 +2,15 @@
 """Fetch data from J-Quants V2 API and load into BigQuery.
 
 Usage:
+    # Default: last 30 days
     python scripts/ingest_to_bigquery.py
+
+    # Custom date range
+    python scripts/ingest_to_bigquery.py --from 20240101 --to 20260204
+
+    # Only specific data types
+    python scripts/ingest_to_bigquery.py --from 20240101 --to 20260204 --only bars
+    python scripts/ingest_to_bigquery.py --from 20240101 --to 20260204 --only fins
 
 Requires:
     - JQUANTS_API_KEY environment variable
@@ -10,9 +18,10 @@ Requires:
     - google-cloud-bigquery and httpx packages
 """
 
+import argparse
 import os
 import sys
-import json
+import time
 from datetime import datetime, timedelta
 
 import httpx
@@ -25,13 +34,21 @@ API_KEY = os.environ.get("JQUANTS_API_KEY", "")
 
 
 def make_request(url: str) -> dict:
-    """Make an authenticated request to J-Quants V2 API."""
+    """Make an authenticated request to J-Quants V2 API with rate limiting."""
     headers = {"x-api-key": API_KEY}
-    resp = httpx.get(url, headers=headers, timeout=60)
-    if resp.status_code != 200:
-        print(f"  ERROR: {resp.status_code} - {resp.text[:200]}")
-        return {}
-    return resp.json()
+    for attempt in range(3):
+        resp = httpx.get(url, headers=headers, timeout=60)
+        if resp.status_code == 429:
+            wait = 2 ** (attempt + 1)
+            print(f"  Rate limited, waiting {wait}s...")
+            time.sleep(wait)
+            continue
+        if resp.status_code != 200:
+            print(f"  ERROR: {resp.status_code} - {resp.text[:200]}")
+            return {}
+        return resp.json()
+    print("  ERROR: Max retries exceeded (rate limit)")
+    return {}
 
 
 def fetch_all_pages(url: str) -> list:
@@ -195,22 +212,34 @@ def load_financial_summary(client: bigquery.Client, from_date: str, to_date: str
 
 
 def main():
+    parser = argparse.ArgumentParser(description="Ingest J-Quants data into BigQuery")
+    parser.add_argument("--from", dest="from_date", default=None,
+                        help="Start date in YYYYMMDD format (default: 30 days ago)")
+    parser.add_argument("--to", dest="to_date", default=None,
+                        help="End date in YYYYMMDD format (default: today)")
+    parser.add_argument("--only", choices=["master", "bars", "fins"],
+                        help="Only load specific data type")
+    args = parser.parse_args()
+
     if not API_KEY:
         print("ERROR: JQUANTS_API_KEY environment variable is not set.")
         sys.exit(1)
 
+    to_date = args.to_date or datetime.now().strftime("%Y%m%d")
+    from_date = args.from_date or (datetime.now() - timedelta(days=30)).strftime("%Y%m%d")
+
+    print(f"Date range: {from_date} to {to_date}")
+
     client = bigquery.Client(project=PROJECT_ID)
 
-    # Load equities master
-    load_equities_master(client)
+    if not args.only or args.only == "master":
+        load_equities_master(client)
 
-    # Load daily bars (last 30 days by default)
-    to_date = datetime.now().strftime("%Y%m%d")
-    from_date = (datetime.now() - timedelta(days=30)).strftime("%Y%m%d")
-    load_daily_bars(client, from_date, to_date)
+    if not args.only or args.only == "bars":
+        load_daily_bars(client, from_date, to_date)
 
-    # Load financial summary (same date range)
-    load_financial_summary(client, from_date, to_date)
+    if not args.only or args.only == "fins":
+        load_financial_summary(client, from_date, to_date)
 
     print("\nDone!")
 
