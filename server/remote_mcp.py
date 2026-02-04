@@ -17,6 +17,8 @@ from fastmcp import FastMCP
 # Load .env from the project root
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
+JQUANTS_BASE = "https://api.jquants.com/v2"
+
 mcp_server = FastMCP("JQuants-Remote-MCP-server")
 
 
@@ -57,18 +59,18 @@ async def search_company(
         limit: Maximum number of results. Defaults to 10.
         start_position: Starting position for pagination. Defaults to 0.
     """
-    response = await _make_request("https://api.jquants.com/v2/listed/info")
+    response = await _make_request(f"{JQUANTS_BASE}/equities/master")
     if "error" in response:
         return json.dumps(response, ensure_ascii=False)
 
     matches = [
         r
-        for r in response.get("info", [])
-        if query.lower() in r.get("CompanyName", "").lower()
-        or query.lower() in r.get("CompanyNameEnglish", "").lower()
+        for r in response.get("data", [])
+        if query.lower() in r.get("CoName", "").lower()
+        or query.lower() in r.get("CoNameEn", "").lower()
     ][start_position : start_position + limit]
 
-    return json.dumps({"info": matches}, ensure_ascii=False)
+    return json.dumps({"data": matches}, ensure_ascii=False)
 
 
 @mcp_server.tool()
@@ -81,22 +83,20 @@ async def get_daily_quotes(
 ) -> str:
     """Retrieve daily stock price data for a specified stock code.
 
-    Data is available from 2 years prior to today up until 12 weeks ago.
-
     Args:
         code: Stock code. Example: "72030" (Toyota)
-        from_date: Start date in YYYY-MM-DD format.
-        to_date: End date in YYYY-MM-DD format.
+        from_date: Start date in YYYYMMDD format. Example: "20260101"
+        to_date: End date in YYYYMMDD format. Example: "20260204"
         limit: Maximum number of results. Defaults to 10.
         start_position: Starting position for pagination. Defaults to 0.
     """
-    url = f"https://api.jquants.com/v2/prices/daily_quotes?code={code}&from={from_date}&to={to_date}"
+    url = f"{JQUANTS_BASE}/equities/bars/daily?code={code}&from_yyyymmdd={from_date}&to_yyyymmdd={to_date}"
     response = await _make_request(url)
     if "error" in response:
         return json.dumps(response, ensure_ascii=False)
 
-    quotes = response.get("daily_quotes", [])[start_position : start_position + limit]
-    return json.dumps({"daily_quotes": quotes}, ensure_ascii=False)
+    quotes = response.get("data", [])[start_position : start_position + limit]
+    return json.dumps({"data": quotes}, ensure_ascii=False)
 
 
 @mcp_server.tool()
@@ -105,9 +105,8 @@ async def get_financial_statements(
     limit: int = 10,
     start_position: int = 0,
 ) -> str:
-    """Retrieve financial statements for a specified stock code.
+    """Retrieve financial summary for a specified stock code.
 
-    Data is available from 2 years prior to today up until 12 weeks ago.
     Returns quarterly financial summaries and disclosure information.
 
     Args:
@@ -115,17 +114,17 @@ async def get_financial_statements(
         limit: Maximum number of results. Defaults to 10.
         start_position: Starting position for pagination. Defaults to 0.
     """
-    url = f"https://api.jquants.com/v2/fins/statements?code={code}"
+    url = f"{JQUANTS_BASE}/fins/summary?code={code}"
     response = await _make_request(url)
     if "error" in response:
         return json.dumps(response, ensure_ascii=False)
 
     statements = [
         {k: v for k, v in r.items() if v != ""}
-        for r in response.get("statements", [])
+        for r in response.get("data", [])
     ][start_position : start_position + limit]
 
-    return json.dumps({"statements": statements}, ensure_ascii=False)
+    return json.dumps({"data": statements}, ensure_ascii=False)
 
 
 if __name__ == "__main__":
