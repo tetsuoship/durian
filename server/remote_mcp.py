@@ -14,7 +14,7 @@ from typing import Any
 import httpx
 import uvicorn
 from dotenv import load_dotenv
-from mcp.server.fastmcp import FastMCP
+from fastmcp import FastMCP
 
 # Load .env from the project root
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
