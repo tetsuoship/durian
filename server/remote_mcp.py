@@ -145,17 +145,19 @@ async def query_stock_data(sql: str) -> str:
                 Vo (Volume), Va (Value), AdjFactor, AdjO, AdjH, AdjL, AdjC, AdjVo
 
     3. financial_summary - Quarterly financial statements
-       Columns: DisclosedDate, Code, FiscalYear, FiscalQuarter,
-                NetSales, OperatingProfit, OrdinaryProfit, Profit,
-                EarningsPerShare, TotalAssets, Equity, NumberOfShares
+       Columns: DiscDate (開示日), Code, DocType, CurPerType (1Q/2Q/3Q/FY),
+                CurFYEn (期末日), Sales (売上高), OP (営業利益), OdP (経常利益),
+                NP (純利益), EPS, TA (総資産), Eq (純資産)
+       Note: Number of shares can be estimated as NP / EPS.
 
     Example queries:
-    - PSR < 0.5: SELECT m.Code, m.CoName, (b.AdjC * f.NumberOfShares) / f.NetSales AS PSR
+    - PSR < 0.5: SELECT m.Code, m.CoName, (b.AdjC * (f.NP / f.EPS)) / f.Sales AS PSR
                  FROM jquants.equities_master m
                  JOIN jquants.daily_bars b ON m.Code = b.Code
                  JOIN jquants.financial_summary f ON m.Code = f.Code
-                 WHERE f.NetSales > 0 AND b.Date = (SELECT MAX(Date) FROM jquants.daily_bars)
-                 AND f.DisclosedDate = (SELECT MAX(DisclosedDate) FROM jquants.financial_summary f2 WHERE f2.Code = f.Code)
+                 WHERE f.Sales > 0 AND f.EPS > 0
+                 AND b.Date = (SELECT MAX(Date) FROM jquants.daily_bars)
+                 AND f.DiscDate = (SELECT MAX(f2.DiscDate) FROM jquants.financial_summary f2 WHERE f2.Code = f.Code)
                  HAVING PSR < 0.5 ORDER BY PSR LIMIT 20
 
     Args:

@@ -142,23 +142,22 @@ def load_financial_summary(client: bigquery.Client, from_date: str, to_date: str
     print(f"Fetching financial summary ({from_date} to {to_date})...")
 
     table_id = f"{PROJECT_ID}.{DATASET}.financial_summary"
-    numeric_fields = {"NetSales", "OperatingProfit", "OrdinaryProfit", "Profit",
-                      "EarningsPerShare", "TotalAssets", "Equity"}
-    shares_key = "NumberOfIssuedAndOutstandingSharesAtTheEndOfFiscalYearIncludingTreasuryStock"
     schema = [
-        bigquery.SchemaField("DisclosedDate", "DATE"),
+        bigquery.SchemaField("DiscDate", "DATE"),
         bigquery.SchemaField("Code", "STRING"),
-        bigquery.SchemaField("FiscalYear", "STRING"),
-        bigquery.SchemaField("FiscalQuarter", "STRING"),
-        bigquery.SchemaField("NetSales", "FLOAT"),
-        bigquery.SchemaField("OperatingProfit", "FLOAT"),
-        bigquery.SchemaField("OrdinaryProfit", "FLOAT"),
-        bigquery.SchemaField("Profit", "FLOAT"),
-        bigquery.SchemaField("EarningsPerShare", "FLOAT"),
-        bigquery.SchemaField("TotalAssets", "FLOAT"),
-        bigquery.SchemaField("Equity", "FLOAT"),
-        bigquery.SchemaField("NumberOfShares", "FLOAT"),
+        bigquery.SchemaField("DocType", "STRING"),
+        bigquery.SchemaField("CurPerType", "STRING"),
+        bigquery.SchemaField("CurFYEn", "STRING"),
+        bigquery.SchemaField("Sales", "FLOAT"),
+        bigquery.SchemaField("OP", "FLOAT"),
+        bigquery.SchemaField("OdP", "FLOAT"),
+        bigquery.SchemaField("NP", "FLOAT"),
+        bigquery.SchemaField("EPS", "FLOAT"),
+        bigquery.SchemaField("TA", "FLOAT"),
+        bigquery.SchemaField("Eq", "FLOAT"),
     ]
+    numeric_fields = {"Sales", "OP", "OdP", "NP", "EPS", "TA", "Eq"}
+    string_fields = {"Code", "DocType", "CurPerType", "CurFYEn"}
 
     start = datetime.strptime(from_date, "%Y%m%d")
     end = datetime.strptime(to_date, "%Y%m%d")
@@ -173,15 +172,12 @@ def load_financial_summary(client: bigquery.Client, from_date: str, to_date: str
                 filtered = []
                 for row in data:
                     r = {}
-                    r["DisclosedDate"] = row.get("DisclosedDate") or None
-                    r["Code"] = row.get("Code") or None
-                    r["FiscalYear"] = row.get("FiscalYear") or None
-                    r["FiscalQuarter"] = row.get("FiscalQuarter") or None
+                    r["DiscDate"] = row.get("DiscDate") or None
+                    for k in string_fields:
+                        r[k] = row.get(k) or None
                     for k in numeric_fields:
                         v = row.get(k, "")
                         r[k] = float(v) if v != "" else None
-                    v = row.get(shares_key, "")
-                    r["NumberOfShares"] = float(v) if v != "" else None
                     filtered.append(r)
 
                 job_config = bigquery.LoadJobConfig(
