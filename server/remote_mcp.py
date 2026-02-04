@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+import uvicorn
 from dotenv import load_dotenv
 from mcp.server.fastmcp import FastMCP
 
@@ -168,11 +169,15 @@ async def get_financial_statements(
     return json.dumps({"statements": statements}, ensure_ascii=False)
 
 
-def main() -> None:
-    host = os.environ.get("HOST", "0.0.0.0")
-    port = int(os.environ.get("PORT", "8000"))
-    mcp_server.run(transport="http", host=host, port=port)
-
+# ASGI app for production deployment (uvicorn / gunicorn)
+app = mcp_server.http_app(
+    path="/mcp",
+    transport="http",
+    stateless_http=True,
+    json_response=True,
+)
 
 if __name__ == "__main__":
-    main()
+    host = os.environ.get("HOST", "0.0.0.0")
+    port = int(os.environ.get("PORT", "8000"))
+    uvicorn.run(app, host=host, port=port)
