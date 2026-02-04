@@ -25,21 +25,30 @@ _token_cache: dict[str, Any] = {"id_token": "", "expires_at": 0.0}
 
 
 async def _refresh_id_token() -> str:
-    """Obtain a fresh ID token from the J-Quants API using the API key."""
+    """Obtain a fresh ID token from the J-Quants API.
+
+    Supports two auth methods:
+      - JQUANTS_REFRESH_TOKEN: Use refresh token directly (V1 accounts)
+      - JQUANTS_API_KEY: Use API key to get refresh token first (V2 accounts)
+    """
+    refresh_token = os.environ.get("JQUANTS_REFRESH_TOKEN", "")
     api_key = os.environ.get("JQUANTS_API_KEY", "")
-    if not api_key:
-        raise RuntimeError("JQUANTS_API_KEY is not set.")
 
     async with httpx.AsyncClient(timeout=30) as client:
-        # Step 1: API key -> refresh token
-        resp = await client.post(
-            "https://api.jquants.com/v1/token/auth_user",
-            json={"apikey": api_key},
-        )
-        resp.raise_for_status()
-        refresh_token = resp.json()["refreshToken"]
+        if not refresh_token:
+            if not api_key:
+                raise RuntimeError(
+                    "JQUANTS_REFRESH_TOKEN or JQUANTS_API_KEY must be set."
+                )
+            # API key -> refresh token (V2)
+            resp = await client.post(
+                "https://api.jquants.com/v1/token/auth_user",
+                json={"apikey": api_key},
+            )
+            resp.raise_for_status()
+            refresh_token = resp.json()["refreshToken"]
 
-        # Step 2: refresh token -> ID token
+        # refresh token -> ID token
         resp = await client.post(
             f"https://api.jquants.com/v1/token/auth_refresh?refreshtoken={refresh_token}",
         )
