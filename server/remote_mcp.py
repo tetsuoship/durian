@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
 """Remote J-Quants MCP server with Streamable HTTP transport.
 
-Automatically handles API key -> ID token authentication and token refresh.
+Uses J-Quants V2 API with x-api-key header authentication.
 Deploy this as a web service to use J-Quants MCP from mobile or remote clients.
 """
 
 import json
 import os
-import time
 from pathlib import Path
 from typing import Any
 
@@ -20,64 +19,16 @@ load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 mcp_server = FastMCP("JQuants-Remote-MCP-server")
 
-# Token cache
-_token_cache: dict[str, Any] = {"id_token": "", "expires_at": 0.0}
-
-
-async def _refresh_id_token() -> str:
-    """Obtain a fresh ID token from the J-Quants API.
-
-    Supports two auth methods:
-      - JQUANTS_REFRESH_TOKEN: Use refresh token directly (V1 accounts)
-      - JQUANTS_API_KEY: Use API key to get refresh token first (V2 accounts)
-    """
-    refresh_token = os.environ.get("JQUANTS_REFRESH_TOKEN", "")
-    api_key = os.environ.get("JQUANTS_API_KEY", "")
-
-    async with httpx.AsyncClient(timeout=30) as client:
-        if not refresh_token:
-            if not api_key:
-                raise RuntimeError(
-                    "JQUANTS_REFRESH_TOKEN or JQUANTS_API_KEY must be set."
-                )
-            # API key -> refresh token (V2)
-            resp = await client.post(
-                "https://api.jquants.com/v1/token/auth_user",
-                json={"apikey": api_key},
-            )
-            resp.raise_for_status()
-            refresh_token = resp.json()["refreshToken"]
-
-        # refresh token -> ID token
-        resp = await client.post(
-            f"https://api.jquants.com/v1/token/auth_refresh?refreshtoken={refresh_token}",
-        )
-        resp.raise_for_status()
-        return resp.json()["idToken"]
-
-
-async def _get_id_token() -> str:
-    """Return a cached ID token, refreshing if expired (23h TTL)."""
-    now = time.time()
-    if _token_cache["id_token"] and now < _token_cache["expires_at"]:
-        return _token_cache["id_token"]
-
-    token = await _refresh_id_token()
-    _token_cache["id_token"] = token
-    _token_cache["expires_at"] = now + 23 * 3600  # 23 hours
-    return token
-
 
 async def _make_request(url: str, timeout: int = 30) -> dict[str, Any]:
-    """Make an authenticated request to the J-Quants API."""
-    try:
-        id_token = await _get_id_token()
-    except Exception as e:
-        return {"error": f"認証エラー: {e}", "status": "auth_error"}
+    """Make an authenticated request to the J-Quants V2 API."""
+    api_key = os.environ.get("JQUANTS_API_KEY", "")
+    if not api_key:
+        return {"error": "JQUANTS_API_KEY is not set.", "status": "auth_error"}
 
     try:
         async with httpx.AsyncClient(timeout=timeout) as client:
-            headers = {"Authorization": f"Bearer {id_token}"}
+            headers = {"x-api-key": api_key}
             response = await client.get(url, headers=headers)
             if response.status_code != 200:
                 return {
@@ -106,7 +57,7 @@ async def search_company(
         limit: Maximum number of results. Defaults to 10.
         start_position: Starting position for pagination. Defaults to 0.
     """
-    response = await _make_request("https://api.jquants.com/v1/listed/info")
+    response = await _make_request("https://api.jquants.com/v2/listed/info")
     if "error" in response:
         return json.dumps(response, ensure_ascii=False)
 
@@ -139,7 +90,7 @@ async def get_daily_quotes(
         limit: Maximum number of results. Defaults to 10.
         start_position: Starting position for pagination. Defaults to 0.
     """
-    url = f"https://api.jquants.com/v1/prices/daily_quotes?code={code}&from={from_date}&to={to_date}"
+    url = f"https://api.jquants.com/v2/prices/daily_quotes?code={code}&from={from_date}&to={to_date}"
     response = await _make_request(url)
     if "error" in response:
         return json.dumps(response, ensure_ascii=False)
@@ -164,7 +115,7 @@ async def get_financial_statements(
         limit: Maximum number of results. Defaults to 10.
         start_position: Starting position for pagination. Defaults to 0.
     """
-    url = f"https://api.jquants.com/v1/fins/statements?code={code}"
+    url = f"https://api.jquants.com/v2/fins/statements?code={code}"
     response = await _make_request(url)
     if "error" in response:
         return json.dumps(response, ensure_ascii=False)
