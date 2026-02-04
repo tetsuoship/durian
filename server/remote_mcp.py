@@ -13,11 +13,14 @@ from typing import Any
 import httpx
 from dotenv import load_dotenv
 from fastmcp import FastMCP
+from google.cloud import bigquery
 
 # Load .env from the project root
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 JQUANTS_BASE = "https://api.jquants.com/v2"
+BQ_PROJECT = os.environ.get("GOOGLE_CLOUD_PROJECT", "gen-lang-client-0620989837")
+BQ_DATASET = "jquants"
 
 mcp_server = FastMCP("JQuants-Remote-MCP-server")
 
@@ -125,6 +128,57 @@ async def get_financial_statements(
     ][start_position : start_position + limit]
 
     return json.dumps({"data": statements}, ensure_ascii=False)
+
+
+@mcp_server.tool()
+async def query_stock_data(sql: str) -> str:
+    """Run a SQL query against the J-Quants BigQuery database.
+
+    Available tables in dataset 'jquants':
+
+    1. equities_master - Listed company info
+       Columns: Date, Code, CoName, CoNameEn, S17, S17Nm (sector17),
+                S33, S33Nm (sector33), ScaleCat, Mkt, MktNm, Mrgn, MrgnNm
+
+    2. daily_bars - Daily stock prices (OHLC)
+       Columns: Date, Code, O (Open), H (High), L (Low), C (Close),
+                Vo (Volume), Va (Value), AdjFactor, AdjO, AdjH, AdjL, AdjC, AdjVo
+
+    3. financial_summary - Quarterly financial statements
+       Columns: DisclosedDate, Code, FiscalYear, FiscalQuarter,
+                NetSales, OperatingProfit, OrdinaryProfit, Profit,
+                EarningsPerShare, TotalAssets, Equity, NumberOfShares
+
+    Example queries:
+    - PSR < 0.5: SELECT m.Code, m.CoName, (b.AdjC * f.NumberOfShares) / f.NetSales AS PSR
+                 FROM jquants.equities_master m
+                 JOIN jquants.daily_bars b ON m.Code = b.Code
+                 JOIN jquants.financial_summary f ON m.Code = f.Code
+                 WHERE f.NetSales > 0 AND b.Date = (SELECT MAX(Date) FROM jquants.daily_bars)
+                 AND f.DisclosedDate = (SELECT MAX(DisclosedDate) FROM jquants.financial_summary f2 WHERE f2.Code = f.Code)
+                 HAVING PSR < 0.5 ORDER BY PSR LIMIT 20
+
+    Args:
+        sql: BigQuery SQL query. Use project 'gen-lang-client-0620989837' and dataset 'jquants'.
+    """
+    try:
+        bq_client = bigquery.Client(project=BQ_PROJECT)
+        query_job = bq_client.query(sql)
+        results = query_job.result()
+
+        rows = []
+        for row in results:
+            rows.append(dict(row))
+            if len(rows) >= 100:
+                break
+
+        return json.dumps(
+            {"data": rows, "total_rows": results.total_rows},
+            ensure_ascii=False,
+            default=str,
+        )
+    except Exception as e:
+        return json.dumps({"error": str(e)}, ensure_ascii=False)
 
 
 if __name__ == "__main__":

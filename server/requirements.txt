@@ -2,3 +2,4 @@ fastmcp==2.14.4
 httpx
 python-dotenv
 uvicorn
+google-cloud-bigquery
